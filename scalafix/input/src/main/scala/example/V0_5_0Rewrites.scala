@@ -20,15 +20,13 @@ import org.typelevel.otel4s.java.context.AskContext
 import org.typelevel.otel4s.java.context.LocalContext
 import org.typelevel.otel4s.java.context.Context
 import org.typelevel.otel4s.java.instances._
-import org.typelevel.otel4s.java.instances.localForIoLocal
-import org.typelevel.otel4s.java.instances.{localForIoLocal => liftLocal}
 // format: on
 
 object Test {
 
   def makeLocal[F[_]: Async: LiftIO](implicit local: IOLocal[Context]): Unit = {
-    val b = localForIoLocal
-    val c = localForIoLocal(Async[F], LiftIO[F], local)
+    val b = local.asLocal[F]
+    val c = local.asLocal[F]
   }
 
   def program[F[_]](implicit otelJava: OtelJava[F]): Unit = ???

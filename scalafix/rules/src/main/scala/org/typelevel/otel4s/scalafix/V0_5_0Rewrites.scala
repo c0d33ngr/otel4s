@@ -41,11 +41,16 @@ class V0_5_0Rewrites extends SemanticRule("V0_5_0Rewrites") {
     val context = SymbolMatcher.exact("org/typelevel/otel4s/java/context/")
     val trace = SymbolMatcher.exact("org/typelevel/otel4s/java/trace/")
     val instances = SymbolMatcher.exact("org/typelevel/otel4s/java/instances.")
+    val localInstances = SymbolMatcher.exact("org/typelevel/otel4s/instances/local.")
   }
 
   override def fix(implicit doc: SemanticDocument): Patch = {
     val LocalForIoLocal_M = SymbolMatcher.exact(
       "org/typelevel/otel4s/java/instances.localForIoLocal()."
+    )
+
+    val LocalForIOLocal_M = SymbolMatcher.exact(
+      "org/typelevel/otel4s/instances/local.localForIOLocal()."
     )
 
     doc.tree.collect {
@@ -79,8 +84,36 @@ class V0_5_0Rewrites extends SemanticRule("V0_5_0Rewrites") {
         val next = Importer(selectors.otel4s("instances", "local"), importees)
         Patch.replaceTree(importer, next.toString())
 
+      case importer @ Importer(ref, imp) if imports.localInstances.matches(ref) =>
+        val filteredImportees = imp.filter {
+          case Importee.Name(Name("localForIOLocal")) => false
+          case Importee.Rename(Name("localForIOLocal"), _) => false
+          case _ => true
+        }
+
+        if (filteredImportees.isEmpty) {
+          Patch.removeImportee(importer)
+        } else {
+          val next = Importer(ref, filteredImportees)
+          Patch.replaceTree(importer, next.toString())
+        }
+
       case t @ LocalForIoLocal_M(_: Term.Name) =>
-        Patch.replaceTree(t, "localForIOLocal")
+        Patch.replaceTree(t, "local.asLocal[F]")
+
+      // Replace localForIOLocal function calls with IOLocal#asLocal
+      case t @ Term.Apply(LocalForIOLocal_M(_), args) =>
+        // For localForIOLocal(implicit1, implicit2, ioLocal), replace with ioLocal.asLocal[F]
+        args.lastOption match {
+          case Some(ioLocalArg) =>
+            Patch.replaceTree(t, s"${ioLocalArg}.asLocal[F]")
+          case None =>
+            Patch.empty
+        }
+
+      case t @ LocalForIOLocal_M(_: Term.Name) =>
+        // For bare localForIOLocal references, replace with local.asLocal[F]
+        Patch.replaceTree(t, "local.asLocal[F]")
 
       // meter ops
       case MeterOps.Counter(patch) =>
